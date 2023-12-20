@@ -22,19 +22,19 @@ type MessageRelayer interface {
 }
 
 type messageRelayerImpl struct {
-	socket          network.NetworkSocket
-	buf             chan message.Message
-	messages        map[message.MessageType][]message.Message
-	subscribers     map[message.MessageType][]chan message.Message
-	subscribersLock sync.RWMutex
+	socket           network.NetworkSocket
+	readMessageQueue chan message.Message
+	messages         map[message.MessageType][]message.Message // where messages are trimmed and stored before they are broadcast
+	subscribers      map[message.MessageType][]chan message.Message
+	subscribersLock  sync.RWMutex
 }
 
 func NewMessageRelayer(socket network.NetworkSocket) *messageRelayerImpl {
 	return &messageRelayerImpl{
-		socket:      socket,
-		buf:         make(chan message.Message, MaxReadQueueSize),
-		messages:    make(map[message.MessageType][]message.Message),
-		subscribers: make(map[message.MessageType][]chan message.Message),
+		socket:           socket,
+		readMessageQueue: make(chan message.Message, MaxReadQueueSize),
+		messages:         make(map[message.MessageType][]message.Message),
+		subscribers:      make(map[message.MessageType][]chan message.Message),
 	}
 }
 
@@ -67,11 +67,11 @@ func (m *messageRelayerImpl) read() {
 			// Handle the error appropriately. For now, let's just continue.
 			return
 		}
-		m.buf <- msg
+		m.readMessageQueue <- msg
 
-		// for testing
+		// for testing, throttle the read
 		fmt.Println("Read() message successfully: ", msg)
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * ReadMessagesDelayMs)
 	}
 }
 
@@ -79,20 +79,20 @@ func (m *messageRelayerImpl) handleReadMessage(done chan bool) {
 	var buf []message.Message
 	for {
 		select {
-		case msg := <-m.buf:
+		case msg := <-m.readMessageQueue:
 			buf = append(buf, msg)
 
 		case <-done:
 			m.trimBuf(buf)
 			buf = nil
-			m.broadcastMessages()
 
+			m.broadcastMessages()
 			return
 		}
 	}
 }
 
-// Trim buffer and persist that to messages to be broadcast/processed
+// Trim buffer and persist that to messages map to be broadcast/processed
 func (m *messageRelayerImpl) trimBuf(buf []message.Message) {
 	for _, msg := range buf {
 		switch msg.Type {
@@ -110,6 +110,7 @@ func (m *messageRelayerImpl) trimBuf(buf []message.Message) {
 	}
 }
 
+// Broadcast messages from the messages map
 func (m *messageRelayerImpl) broadcastMessages() {
 	fmt.Println("Broadcasting Messages..")
 	// Requirement:
@@ -120,6 +121,7 @@ func (m *messageRelayerImpl) broadcastMessages() {
 	for _, msg := range m.messages[message.ReceivedAnswer] {
 		m.broadcastMessage(msg)
 	}
+
 	// clear messages
 	m.messages = make(map[message.MessageType][]message.Message)
 }
