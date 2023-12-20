@@ -11,6 +11,13 @@ import (
 	"example.com/messagerelay/relayer"
 )
 
+// What running main does:
+// 1/ Starts the relayer and its socket and starts reading from it. for the first 2 seconds, there are no subscribers
+// 2/ Subscribers 1 & 2 are added
+// 3/ Subscribers receive messages, for 5000ms
+// 4/ Subscribers are stopped
+// 5/ Runs for 5 more seconds with stopped subscribers
+// 6/ End
 func main() {
 	fmt.Println("Starting..")
 	s := network.NewSocket()

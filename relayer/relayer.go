@@ -99,17 +99,21 @@ func (m *messageRelayerImpl) trimBuf(buf []message.Message) {
 		case message.StartNewRound:
 			m.messages[msg.Type] = append(m.messages[msg.Type], msg)
 			if len(m.messages[msg.Type]) > 2 {
-				m.messages[msg.Type] = m.messages[msg.Type][1:] // Keep only the 2 most recent
+				// We must always ensure that we broadcast the 2 most recent StartNewRound messages
+				m.messages[msg.Type] = m.messages[msg.Type][1:]
 			}
 		case message.ReceivedAnswer:
-			m.messages[msg.Type] = []message.Message{msg} // Store only the most recent
+			// Requirement:
+			//   We only need to ensure that we broadcast only the most recent ReceivedAnswer message
+			m.messages[msg.Type] = []message.Message{msg}
 		}
 	}
 }
 
 func (m *messageRelayerImpl) broadcastMessages() {
 	fmt.Println("Broadcasting Messages..")
-	// Broadcast StartNewRound messages first
+	// Requirement:
+	//      Any time that both a “StartNewRound” and a “ReceivedAnswer” are queued, the “StartNewRound” message should be broadcasted first
 	for _, msg := range m.messages[message.StartNewRound] {
 		m.broadcastMessage(msg)
 	}
@@ -132,6 +136,8 @@ func (m *messageRelayerImpl) broadcastMessage(msg message.Message) {
 		case ch <- msg:
 			fmt.Println("Message sent successfully")
 		default:
+			// Requirement:
+			//     Any time that one of the subscribers of this system is busy and cannot receive a message immediately, we should just skip broadcasting to that subscriber
 			fmt.Println("Subscriber is busy, skip")
 		}
 	}
